@@ -124,6 +124,9 @@ function isAllowedOrigin(origin) {
   if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
   if (/(^|\.)ngrok-free\.app$/i.test(hostname)) return true;
   if (/(^|\.)ngrok\.io$/i.test(hostname)) return true;
+  // Vercel deploys (production + rotating preview subdomains) so the hosted
+  // frontend can talk to this API without listing every preview URL.
+  if (/(^|\.)vercel\.app$/i.test(hostname)) return true;
   return allowedOrigins.includes(origin);
 }
 

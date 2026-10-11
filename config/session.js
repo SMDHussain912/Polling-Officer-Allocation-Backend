@@ -43,7 +43,13 @@ function buildSessionMiddleware() {
     rolling: true, // maxAge is refreshed on every request => stays logged in while active
     cookie: {
       httpOnly: true, // invisible to JavaScript (XSS defence)
-      sameSite: 'lax', // CSRF baseline; backed up by the Origin check in server.js
+      // Cross-domain deploy (Vercel frontend + Render backend) needs
+      // SameSite=None or the cookie is never sent on cross-site requests, and
+      // the session appears to "not stick" (instant bounce to /login). Same-
+      // origin (local dev proxy) keeps the stricter 'lax'. None REQUIRES
+      // Secure (https), which we already force in production. The Origin-check
+      // middleware in server.js remains the CSRF backstop.
+      sameSite: (process.env.SESSION_SAMESITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax')).toLowerCase(),
       secure: process.env.NODE_ENV === 'production', // https-only behind the tunnel
       maxAge: SESSION_TTL_MS,
       path: '/',
