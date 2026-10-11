@@ -34,6 +34,23 @@ function buildSessionMiddleware() {
     crypto: { secret }, // session contents are encrypted at rest in Mongo
   });
 
+  // Cross-domain deploy (Vercel frontend + Render backend) needs
+  // SameSite=None or the cookie is never sent on cross-site requests, and
+  // the session appears to "not stick" (instant bounce to /login). Same-
+  // origin (local dev proxy) keeps the stricter 'lax'. None REQUIRES
+  // Secure (https), which we already force in production. The Origin-check
+  // middleware in server.js remains the CSRF backstop.
+  //
+  // We detect "this is a cross-site https deploy" without relying solely on
+  // NODE_ENV: Render (and most PaaS) run behind an HTTPS proxy and expose
+  // RENDER=true / RENDER_EXTERNAL_URL. Treating those as secure means the
+  // cookie is correctly SameSite=None; Secure even if NODE_ENV was forgotten,
+  // which is exactly the "logged in then bounced back to /login" bug.
+  const isProd = process.env.NODE_ENV === 'production';
+  const onRender = process.env.RENDER === 'true' || Boolean(process.env.RENDER_EXTERNAL_URL);
+  const secure = isProd || onRender || process.env.SESSION_SECURE === 'true';
+  const sameSite = (process.env.SESSION_SAMESITE || (secure ? 'none' : 'lax')).toLowerCase();
+
   return expressSession({
     name: COOKIE_NAME,
     secret,
@@ -43,14 +60,8 @@ function buildSessionMiddleware() {
     rolling: true, // maxAge is refreshed on every request => stays logged in while active
     cookie: {
       httpOnly: true, // invisible to JavaScript (XSS defence)
-      // Cross-domain deploy (Vercel frontend + Render backend) needs
-      // SameSite=None or the cookie is never sent on cross-site requests, and
-      // the session appears to "not stick" (instant bounce to /login). Same-
-      // origin (local dev proxy) keeps the stricter 'lax'. None REQUIRES
-      // Secure (https), which we already force in production. The Origin-check
-      // middleware in server.js remains the CSRF backstop.
-      sameSite: (process.env.SESSION_SAMESITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax')).toLowerCase(),
-      secure: process.env.NODE_ENV === 'production', // https-only behind the tunnel
+      sameSite,
+      secure,
       maxAge: SESSION_TTL_MS,
       path: '/',
     },
