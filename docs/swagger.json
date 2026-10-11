@@ -1,0 +1,3160 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Smart Polling Booth Officer Allocation & Notification API",
+    "version": "1.0.0",
+    "description": "REST API of the Smart Polling Booth Officer Allocation and Notification System.\n\n**Authentication** - single-login system (Main Admin).\n1. `POST /api/auth/login` with the credentials from `backend/.env` (`ADMIN_USERNAME` / `ADMIN_PASSWORD`).\n2. Copy `token` from the response.\n3. Click **Authorize** and paste it (Swagger adds the `Bearer ` prefix automatically).\n4. Mandal-scoped users only ever receive their own Mandal's data; the scope is forced server-side.\n\n**E-mail** - mail is sent through the Gmail API (OAuth2). Connect the mailbox once by opening `/auth/google` in a browser; the refresh token is stored in MongoDB, so sending also works after a server restart.\n\n**Raw JSON** of this specification is served from `/api-docs.json` (importable into Postman / Insomnia).",
+    "contact": {
+      "name": "Polling Officer Allocation System"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local backend - the port must match PORT in backend/.env"
+    },
+    {
+      "url": "http://localhost:5002",
+      "description": "Fallback port used when PORT is not defined"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Service availability"
+    },
+    {
+      "name": "Auth",
+      "description": "Main Admin login and session"
+    },
+    {
+      "name": "Officers",
+      "description": "Officer master data (JWT required)"
+    },
+    {
+      "name": "Booths",
+      "description": "Booth master data (JWT required)"
+    },
+    {
+      "name": "Allocation",
+      "description": "Automatic / manual booth allocation"
+    },
+    {
+      "name": "Dashboard",
+      "description": "Aggregated statistics"
+    },
+    {
+      "name": "Upload",
+      "description": "Excel import of officers and booths (Super Admin)"
+    },
+    {
+      "name": "Notifications",
+      "description": "SMS notifications and delivery status"
+    },
+    {
+      "name": "Reports",
+      "description": "Excel (.xlsx) report downloads"
+    },
+    {
+      "name": "Mail",
+      "description": "E-mail sending through the Gmail API"
+    },
+    {
+      "name": "Google Auth",
+      "description": "Gmail OAuth2 connection flow"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "description": "Returns a static payload used to verify that the API process is up.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "API is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Smart Polling Allocation API is running"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Main Admin login",
+        "description": "The only login in the system. Credentials come from ADMIN_USERNAME / ADMIN_PASSWORD in backend/.env.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed in - use `token` as the Bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Username or password missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Account deactivated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Current session",
+        "description": "Returns the sanitized Main Admin record behind the supplied JWT.",
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/Admin"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/officers": {
+      "get": {
+        "tags": [
+          "Officers"
+        ],
+        "summary": "List officers (paginated)",
+        "description": "Mandal-scoped users automatically only receive officers of their own Mandal.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Search"
+          },
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          },
+          {
+            "name": "ward",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "designation",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated officer list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Officer"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Officers"
+        ],
+        "summary": "Create an officer",
+        "description": "Roles: SUPER_ADMIN, ALLOCATION_OFFICER. `officerId` must be unique.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfficerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Officer created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/officers/grouped": {
+      "get": {
+        "tags": [
+          "Officers"
+        ],
+        "summary": "Officers grouped per Mandal",
+        "description": "Returns one section per Mandal so the dashboard can render separate sections.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mandal sections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "mandal": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              },
+                              "officers": {
+                                "type": "array",
+                                "items": {
+                                  "$ref": "#/components/schemas/Officer"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/officers/all": {
+      "delete": {
+        "tags": [
+          "Officers"
+        ],
+        "summary": "Delete every officer (Super Admin)",
+        "description": "Deletes all officers together with their allocations, notifications and upload records. Declared before /api/officers/{id} so the word `all` is never treated as an id.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deletion summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/officers/{id}": {
+      "put": {
+        "tags": [
+          "Officers"
+        ],
+        "summary": "Update an officer",
+        "description": "Roles: SUPER_ADMIN, ALLOCATION_OFFICER.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OfficerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Officer updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfficerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Officers"
+        ],
+        "summary": "Delete one officer (Super Admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delete summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/booths": {
+      "get": {
+        "tags": [
+          "Booths"
+        ],
+        "summary": "List booths (paginated)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Search"
+          },
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          },
+          {
+            "name": "ward",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated booth list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Booth"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Booths"
+        ],
+        "summary": "Create a booth",
+        "description": "Roles: SUPER_ADMIN, ALLOCATION_OFFICER. `boothId` must be unique.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoothInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Booth created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoothResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/booths/grouped": {
+      "get": {
+        "tags": [
+          "Booths"
+        ],
+        "summary": "Booths grouped per Mandal",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mandal sections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "mandal": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              },
+                              "booths": {
+                                "type": "array",
+                                "items": {
+                                  "$ref": "#/components/schemas/Booth"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/booths/all": {
+      "delete": {
+        "tags": [
+          "Booths"
+        ],
+        "summary": "Delete every booth (Super Admin)",
+        "description": "Also removes the allocations pointing at those booths. Declared before /api/booths/{id}.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deletion summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/booths/{id}": {
+      "put": {
+        "tags": [
+          "Booths"
+        ],
+        "summary": "Update a booth",
+        "description": "Roles: SUPER_ADMIN, ALLOCATION_OFFICER.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoothInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Booth updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoothResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Booths"
+        ],
+        "summary": "Delete one booth (Super Admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delete summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/allocation/run": {
+      "post": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Run the automatic allocation engine",
+        "description": "Allocates every unallocated officer to a suitable booth inside the same Mandal. `maxAllocations` limits how many officers are processed in this run (omit for a full run).",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxAllocations": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "nullable": true,
+                    "example": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Run summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "totalOfficers": {
+                              "type": "integer"
+                            },
+                            "allocated": {
+                              "type": "integer"
+                            },
+                            "unallocated": {
+                              "type": "integer"
+                            },
+                            "skipped": {
+                              "type": "integer"
+                            },
+                            "totalMandals": {
+                              "type": "integer"
+                            },
+                            "totalBooths": {
+                              "type": "integer"
+                            },
+                            "runLimit": {
+                              "type": "integer",
+                              "nullable": true
+                            },
+                            "limitReached": {
+                              "type": "boolean"
+                            },
+                            "unallocatedOfficers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/allocation/mandals": {
+      "get": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Mandal-wise allocation summary",
+        "responses": {
+          "200": {
+            "description": "Mandals with allocation counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/allocation": {
+      "get": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "List allocations (paginated)",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ALLOCATED",
+                "CANCELLED",
+                "REALLOCATED"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated allocations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Allocation"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/allocation/suitable-booths/{officerId}": {
+      "get": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Suitable booths for one officer",
+        "description": "Booths of the officer's own Mandal that still have a free slot, ranked by address compatibility.",
+        "parameters": [
+          {
+            "name": "officerId",
+            "in": "path",
+            "required": true,
+            "description": "Officer document id or Officer ID code",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Candidate booths",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/allocation/manual": {
+      "post": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Allocate one officer to one booth manually",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "officerId",
+                  "boothId"
+                ],
+                "properties": {
+                  "officerId": {
+                    "type": "string",
+                    "description": "Officer ID code or document id"
+                  },
+                  "boothId": {
+                    "type": "string",
+                    "description": "Booth ID code or document id"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Allocation created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/allocation/all": {
+      "delete": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Delete every allocation",
+        "responses": {
+          "200": {
+            "description": "Deletion summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/allocation/mandal/{name}": {
+      "delete": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Delete all allocations of one Mandal",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "Kukatpally"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deletion summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/allocation/{id}/reallocate": {
+      "post": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Reallocate an officer to another booth",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reallocation result (the previous allocation becomes REALLOCATED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/allocation/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Allocation"
+        ],
+        "summary": "Cancel an allocation",
+        "description": "The officer becomes unallocated and the booth slot is freed; history is kept.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancellation result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/dashboard/stats": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Dashboard statistics",
+        "description": "Counts of officers, booths, allocations and notifications plus the required / available slots.",
+        "responses": {
+          "200": {
+            "description": "Statistics object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/upload/history": {
+      "get": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Upload history",
+        "description": "Every committed Excel upload with its row counts. Super Admin only.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload batches",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/UploadBatch"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/upload/all": {
+      "delete": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Delete every upload and its imported data (Super Admin)",
+        "responses": {
+          "200": {
+            "description": "Deletion summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/upload/{id}": {
+      "delete": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Delete one upload batch and its data (Super Admin)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deletion summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/upload/officers": {
+      "post": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Import officers from an Excel file",
+        "description": "Super Admin only. Use `mode=preview` to validate the file without saving anything, `mode=commit` to import.",
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "preview",
+                "commit"
+              ],
+              "default": "commit"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Excel workbook (.xlsx / .xls), max 5 MB"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import result (preview or committed rows)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid file or row validation errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/upload/booths": {
+      "post": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Import booths from an Excel file",
+        "description": "Super Admin only. Use `mode=preview` to validate the file without saving anything, `mode=commit` to import.",
+        "parameters": [
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "preview",
+                "commit"
+              ],
+              "default": "commit"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Excel workbook (.xlsx / .xls), max 5 MB"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Import result (preview or committed rows)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid file or row validation errors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/upload/templates/{kind}": {
+      "get": {
+        "tags": [
+          "Upload"
+        ],
+        "summary": "Download a sample Excel template",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "officers",
+                "booths"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template workbook",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Notification history (paginated)",
+        "description": "SMS delivery status for every message sent to an officer. Mandal-scoped users only see their own Mandal.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "SENT",
+                "FAILED",
+                "DEMO_SENT"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Notification"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/notifications/send/{allocationId}": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Send the polling-duty SMS for an allocation",
+        "description": "Roles: SUPER_ADMIN, ALLOCATION_OFFICER. Only works for an ALLOCATED allocation that has a booth. The provider is chosen with SMS_PROVIDER (mock | http).",
+        "parameters": [
+          {
+            "name": "allocationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "665f1c2b8a1e4d0012a3b4c5"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification stored with its delivery status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Notification"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Allocation is not ALLOCATED or has no booth",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/reports/officers-excel": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download the officer report (.xlsx)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/XlsxDownload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/reports/booths-excel": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download the booth report (.xlsx)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/XlsxDownload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/reports/allocation-excel": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download the allocated-officers report (.xlsx)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/XlsxDownload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/reports/unallocated-officers": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download the unallocated-officers report (.xlsx)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/XlsxDownload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/reports/notifications-excel": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download the notification status report (.xlsx)",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/MandalFilter"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/XlsxDownload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/reports/allocation-by-mandal": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download the full allocation details for all Mandals in one sheet (.xlsx)",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/XlsxDownload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/reports/allocated-officers/{mandal}": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Download the allocated-officers list of one Mandal (.xlsx)",
+        "parameters": [
+          {
+            "name": "mandal",
+            "in": "path",
+            "required": true,
+            "description": "Mandal name, matched case-insensitively",
+            "schema": {
+              "type": "string",
+              "example": "Kukatpally"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/XlsxDownload"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/mail/status": {
+      "get": {
+        "tags": [
+          "Mail"
+        ],
+        "summary": "Gmail connection status",
+        "description": "Reports whether the GOOGLE_* variables are set, whether a mailbox is connected, which account it is and where the credentials are stored (env | database | memory). Never returns the tokens themselves.",
+        "responses": {
+          "200": {
+            "description": "Connection status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/MailStatus"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/mail/send": {
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "summary": "Send an e-mail through Gmail",
+        "description": "Roles: SUPER_ADMIN, ALLOCATION_OFFICER. `text` and/or `html` is required; when both are supplied the message is sent as multipart/alternative. Recipients may be a comma separated string or an array. Answers 503 while no Gmail account is connected (open /auth/google once).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailSendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "E-mail accepted by Gmail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailSendResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "502": {
+            "description": "Gmail rejected the message (MAIL_SEND_FAILED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Gmail not configured or not connected (MAIL_NOT_CONFIGURED | MAIL_NOT_CONNECTED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/allocation/{allocationId}": {
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "summary": "E-mail the ID-card download link to one allocated officer",
+        "description": "Used by the dashboard Send Mail button. The mail is short: it names the Mandal the officer was allocated to and contains the tokenised link to their Polling Duty ID card PDF - no attachment. Opening the link marks the card as received (idcards collection, `receivedAt`). The officer's `email` field is the recipient. 400 when the officer has no e-mail address, 503 while Gmail is not connected.",
+        "parameters": [
+          {
+            "name": "allocationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "665f1c2b8a1e4d0012a3b4c5"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mail sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailSendResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Allocation not ALLOCATED, no booth, or the officer has no e-mail address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "description": "Gmail rejected the message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Gmail not configured or not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google": {
+      "get": {
+        "tags": [
+          "Google Auth"
+        ],
+        "summary": "Start the Gmail OAuth2 consent flow",
+        "description": "Redirects (302) the browser to the Google consent screen with `access_type=offline` and `prompt=consent`, so a refresh token is always issued. Open this URL once in a browser - it is not a JSON endpoint. The redirect URI must match GOOGLE_REDIRECT_URI in backend/.env.",
+        "security": [],
+        "responses": {
+          "302": {
+            "description": "Redirect to accounts.google.com",
+            "headers": {
+              "Location": {
+                "description": "Google consent URL",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google/callback": {
+      "get": {
+        "tags": [
+          "Google Auth"
+        ],
+        "summary": "OAuth2 callback - stores the refresh token",
+        "description": "Google redirects here after consent. The code is exchanged for tokens, the tokens are persisted in MongoDB (collection `googletokens`) and an HTML result page is returned. After a successful call, `POST /api/mail/send` works - including after a server restart.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Authorization code supplied by Google"
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Set by Google when the user denied the request"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "HTML result page (Gmail connected)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Authorization code missing or consent denied (HTML page)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Token exchange failed (HTML page)",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/allocation": {
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "summary": "E-mail the ID-card download link in bulk",
+        "description": "Select recipients with `allocationIds`, with `mandal` (every ALLOCATED officer of that Mandal) or both. The response always contains a per-officer result list, so one failure never stops the run. Maximum 100 recipients per request.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "allocationIds": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Explicit selection of allocations"
+                  },
+                  "mandal": {
+                    "type": "string",
+                    "example": "Kukatpally",
+                    "description": "Every ALLOCATED officer of this Mandal"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 50,
+                    "description": "Safety cap when selecting by Mandal"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk result (sent / skipped / failed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailBulkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "502": {
+            "description": "Gmail rejected at least one message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Gmail not configured or not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/test": {
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "summary": "Send a test e-mail",
+        "description": "Sends a test message to the connected mailbox, to GMAIL_FROM, or to the `to` address supplied in the body. The quickest way to verify the connection from Swagger.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "admin@example.com"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Test e-mail sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailSendResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "502": {
+            "description": "Gmail rejected the message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Gmail not configured or not connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mail/disconnect": {
+      "post": {
+        "tags": [
+          "Mail"
+        ],
+        "summary": "Disconnect the Gmail account (Super Admin)",
+        "description": "Deletes the stored GoogleToken document. A refresh token pinned through GOOGLE_REFRESH_TOKEN in .env is not removed.",
+        "responses": {
+          "200": {
+            "description": "Disconnect result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT returned by POST /api/auth/login"
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing, invalid or expired JWT",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The signed-in role may not perform this action",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Request validation failed (express-validator)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ValidationErrorEnvelope"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Record not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "Duplicate key (e.g. Officer ID / Booth ID already exists)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "XlsxDownload": {
+        "description": "Excel workbook (.xlsx) download. The file name is returned in the Content-Disposition header, which is exposed through Access-Control-Expose-Headers. This endpoint is best called from the dashboard or with a saved file, e.g. `curl -H \"Authorization: Bearer <token>\" -OJ http://localhost:5000/api/reports/officers-excel`.",
+        "headers": {
+          "Content-Disposition": {
+            "description": "attachment; filename=\"officers-report.xlsx\"",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+            "schema": {
+              "type": "string",
+              "format": "binary"
+            }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "description": "1-based page number",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "description": "Records per page (max 500)",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 50
+        }
+      },
+      "MandalFilter": {
+        "name": "mandal",
+        "in": "query",
+        "description": "Case-insensitive exact Mandal name (ignored for Mandal-scoped users, whose scope is forced server-side)",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Search": {
+        "name": "search",
+        "in": "query",
+        "description": "Free text search (ID, name, mobile number, locality)",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "ResourceId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "MongoDB ObjectId of the record",
+        "schema": {
+          "type": "string",
+          "example": "665f1c2b8a1e4d0012a3b4c5"
+        }
+      }
+    },
+    "schemas": {
+      "SuccessEnvelope": {
+        "type": "object",
+        "description": "Standard success wrapper used by every endpoint",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {},
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "description": "Standard error wrapper",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "Not authorized - missing token"
+          },
+          "code": {
+            "type": "string",
+            "description": "Machine readable code, e.g. MAIL_NOT_CONNECTED",
+            "nullable": true
+          },
+          "stack": {
+            "type": "string",
+            "description": "Only returned for 5xx responses in development"
+          }
+        }
+      },
+      "ValidationErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "Officer Name is required"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string"
+                },
+                "value": {},
+                "msg": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "total": {
+            "type": "integer",
+            "example": 412
+          },
+          "pages": {
+            "type": "integer",
+            "example": 9
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "example": "admin"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "example": "admin123"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "token": {
+            "type": "string",
+            "description": "JWT - paste it into the Authorize dialog as `Bearer <token>`",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          },
+          "user": {
+            "$ref": "#/components/schemas/Admin"
+          }
+        }
+      },
+      "Admin": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string",
+            "example": "admin"
+          },
+          "name": {
+            "type": "string",
+            "example": "Main Admin"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "SUPER_ADMIN",
+              "ALLOCATION_OFFICER",
+              "MANDAL_ADMIN",
+              "MANDAL_OFFICER",
+              "OFFICER",
+              "BOOTH_OFFICER"
+            ]
+          },
+          "district": {
+            "type": "string"
+          },
+          "assignedMandal": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          }
+        }
+      },
+      "MailSendRequest": {
+        "type": "object",
+        "required": [
+          "to",
+          "subject"
+        ],
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient(s) - comma/semicolon separated or an array",
+            "example": "officer1@example.com, officer2@example.com"
+          },
+          "cc": {
+            "type": "string",
+            "example": "mandal.admin@example.com"
+          },
+          "bcc": {
+            "type": "string"
+          },
+          "replyTo": {
+            "type": "string",
+            "format": "email"
+          },
+          "subject": {
+            "type": "string",
+            "example": "Polling Duty Allocation - Officer OFF001"
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain text body (required when `html` is omitted)"
+          },
+          "html": {
+            "type": "string",
+            "description": "HTML body - generates a multipart/alternative message"
+          },
+          "from": {
+            "type": "string",
+            "format": "email",
+            "description": "Overrides GMAIL_FROM (an alias of the connected account)"
+          },
+          "fromName": {
+            "type": "string",
+            "description": "Display name, overrides GMAIL_FROM_NAME"
+          }
+        }
+      },
+      "MailSendResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "E-mail sent to officer1@example.com"
+          },
+          "messageId": {
+            "type": "string",
+            "description": "Gmail message id",
+            "example": "18f2c9d1a4b5e6f7"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string"
+              },
+              "labelIds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "subject": {
+                "type": "string"
+              },
+              "to": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "recipient": {
+                "type": "string",
+                "description": "Present on the allocation e-mail endpoints"
+              },
+              "officerId": {
+                "type": "string"
+              },
+              "allocationId": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "MailStatus": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "GOOGLE_CLIENT_ID / SECRET / REDIRECT_URI are set"
+          },
+          "connected": {
+            "type": "boolean",
+            "description": "A refresh or access token is available"
+          },
+          "accountEmail": {
+            "type": "string",
+            "description": "Connected mailbox (empty when unknown)"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "env",
+              "database",
+              "memory",
+              "none"
+            ]
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiryDate": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Epoch ms of the access token expiry"
+          },
+          "connectUrl": {
+            "type": "string",
+            "example": "/auth/google"
+          },
+          "hydrated": {
+            "type": "boolean",
+            "description": "Credentials were loaded during server start"
+          }
+        }
+      },
+      "MailBulkResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "false when at least one message failed"
+          },
+          "message": {
+            "type": "string",
+            "example": "12 e-mail(s) sent, 3 skipped"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "requested": {
+                "type": "integer"
+              },
+              "sent": {
+                "type": "integer"
+              },
+              "skipped": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "results": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "allocationId": {
+                      "type": "string"
+                    },
+                    "officerId": {
+                      "type": "string"
+                    },
+                    "officerName": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "SENT",
+                        "SKIPPED",
+                        "FAILED"
+                      ]
+                    },
+                    "messageId": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Reason for SKIPPED / FAILED"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Officer": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "officerId": {
+            "type": "string",
+            "example": "OFF001"
+          },
+          "officerName": {
+            "type": "string",
+            "example": "Ramesh Kumar"
+          },
+          "name": {
+            "type": "string",
+            "description": "Alias of officerName"
+          },
+          "designation": {
+            "type": "string",
+            "example": "TA"
+          },
+          "mobileNumber": {
+            "type": "string",
+            "example": "9876543210"
+          },
+          "email": {
+            "type": "string",
+            "description": "Used by the e-mail endpoints - may be empty",
+            "example": "ramesh@example.com"
+          },
+          "houseNo": {
+            "type": "string"
+          },
+          "street": {
+            "type": "string"
+          },
+          "locality": {
+            "type": "string"
+          },
+          "ward": {
+            "type": "string"
+          },
+          "mandalId": {
+            "type": "string"
+          },
+          "mandal": {
+            "type": "string",
+            "example": "Kukatpally"
+          },
+          "district": {
+            "type": "string"
+          },
+          "pinCode": {
+            "type": "string",
+            "example": "500072"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OfficerInput": {
+        "type": "object",
+        "required": [
+          "officerId",
+          "officerName",
+          "designation",
+          "mobileNumber",
+          "mandal"
+        ],
+        "properties": {
+          "officerId": {
+            "type": "string",
+            "example": "OFF001"
+          },
+          "officerName": {
+            "type": "string",
+            "example": "Ramesh Kumar"
+          },
+          "designation": {
+            "type": "string",
+            "example": "TA"
+          },
+          "mobileNumber": {
+            "type": "string",
+            "example": "9876543210",
+            "description": "10-15 digits, may contain + - and spaces"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "example": "ramesh@example.com"
+          },
+          "houseNo": {
+            "type": "string"
+          },
+          "street": {
+            "type": "string"
+          },
+          "locality": {
+            "type": "string"
+          },
+          "ward": {
+            "type": "string"
+          },
+          "mandal": {
+            "type": "string",
+            "example": "Kukatpally"
+          },
+          "district": {
+            "type": "string"
+          },
+          "pinCode": {
+            "type": "string",
+            "example": "500072",
+            "description": "Exactly 6 digits"
+          }
+        }
+      },
+      "OfficerResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/Officer"
+          }
+        }
+      },
+      "Booth": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "boothId": {
+            "type": "string",
+            "example": "BTH001"
+          },
+          "boothNumber": {
+            "type": "string",
+            "example": "101"
+          },
+          "boothName": {
+            "type": "string",
+            "example": "Govt High School"
+          },
+          "buildingName": {
+            "type": "string"
+          },
+          "street": {
+            "type": "string"
+          },
+          "locality": {
+            "type": "string"
+          },
+          "ward": {
+            "type": "string"
+          },
+          "mandalId": {
+            "type": "string"
+          },
+          "mandal": {
+            "type": "string",
+            "example": "Kukatpally"
+          },
+          "district": {
+            "type": "string"
+          },
+          "pinCode": {
+            "type": "string"
+          },
+          "requiredOfficers": {
+            "type": "integer",
+            "example": 4
+          },
+          "allocatedOfficerCount": {
+            "type": "integer",
+            "example": 2
+          },
+          "availableSlots": {
+            "type": "integer",
+            "example": 2
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BoothInput": {
+        "type": "object",
+        "required": [
+          "boothId",
+          "boothNumber",
+          "boothName",
+          "requiredOfficers",
+          "mandal"
+        ],
+        "properties": {
+          "boothId": {
+            "type": "string",
+            "example": "BTH001"
+          },
+          "boothNumber": {
+            "type": "string",
+            "example": "101"
+          },
+          "boothName": {
+            "type": "string",
+            "example": "Govt High School"
+          },
+          "buildingName": {
+            "type": "string"
+          },
+          "street": {
+            "type": "string"
+          },
+          "locality": {
+            "type": "string"
+          },
+          "ward": {
+            "type": "string"
+          },
+          "mandal": {
+            "type": "string",
+            "example": "Kukatpally"
+          },
+          "district": {
+            "type": "string"
+          },
+          "pinCode": {
+            "type": "string",
+            "description": "Exactly 6 digits"
+          },
+          "requiredOfficers": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 4
+          }
+        }
+      },
+      "BoothResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "data": {
+            "$ref": "#/components/schemas/Booth"
+          }
+        }
+      },
+      "Allocation": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "description": "Use this id for /api/mail/allocation/{allocationId}"
+          },
+          "allocationId": {
+            "type": "string"
+          },
+          "officer": {
+            "$ref": "#/components/schemas/Officer"
+          },
+          "officerId": {
+            "type": "string"
+          },
+          "booth": {
+            "$ref": "#/components/schemas/Booth"
+          },
+          "boothId": {
+            "type": "string"
+          },
+          "mandal": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ALLOCATED",
+              "CANCELLED",
+              "REALLOCATED"
+            ]
+          },
+          "allocationReason": {
+            "type": "string"
+          },
+          "isFallback": {
+            "type": "boolean"
+          },
+          "fallbackReason": {
+            "type": "string"
+          },
+          "addressMatchScore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "addressValidationReason": {
+            "type": "string"
+          },
+          "allocationDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "officer": {
+            "$ref": "#/components/schemas/Officer"
+          },
+          "officerName": {
+            "type": "string"
+          },
+          "booth": {
+            "$ref": "#/components/schemas/Booth"
+          },
+          "allocation": {
+            "$ref": "#/components/schemas/Allocation"
+          },
+          "mandal": {
+            "type": "string"
+          },
+          "mobileNumber": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SENT",
+              "FAILED",
+              "DEMO_SENT"
+            ],
+            "description": "DEMO_SENT is used by the mock provider"
+          },
+          "provider": {
+            "type": "string",
+            "example": "mock"
+          },
+          "providerMessageId": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UploadBatch": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "officers",
+              "booths"
+            ]
+          },
+          "fileName": {
+            "type": "string",
+            "example": "officers.xlsx"
+          },
+          "totalRows": {
+            "type": "integer"
+          },
+          "insertedRows": {
+            "type": "integer"
+          },
+          "updatedRows": {
+            "type": "integer"
+          },
+          "skippedRows": {
+            "type": "integer"
+          },
+          "mandal": {
+            "type": "string"
+          },
+          "uploadedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "GoogleToken": {
+        "type": "object",
+        "description": "Stored Gmail OAuth2 credentials (collection `googletokens`). Tokens are never returned by the API.",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "gmail"
+          },
+          "accountEmail": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "expiryDate": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "env",
+              "oauth"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

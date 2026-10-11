@@ -1,0 +1,47 @@
+{
+  "name": "polling-officer-allocation-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Smart Polling Booth Officer Allocation and Notification System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "smoke-test": "node scripts/smoke-test.js",
+    "test": "node tests/notify.test.js && node tests/idcard-render.test.js",
+    "verify-mail": "node scripts/verify-mail-and-swagger.js",
+    "verify-idcard": "node scripts/verify-id-card.js",
+    "verify-mail-internals": "node scripts/verify-mail-internals.js",
+    "e2e-test": "node scripts/e2e-test.js",
+    "cleanup-e2e": "node scripts/cleanup-e2e.js"
+  },
+  "keywords": [
+    "polling",
+    "allocation",
+    "election",
+    "express",
+    "mongodb"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "connect-mongo": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-mongo-sanitize": "^2.2.0",
+    "express-session": "^1.19.0",
+    "express-validator": "^7.1.0",
+    "googleapis": "^181.0.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^7.7.0",
+    "mongoose": "^8.4.1",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.20.2",
+    "swagger-ui-express": "^5.0.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

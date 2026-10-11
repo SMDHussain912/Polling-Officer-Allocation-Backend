@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets — NEVER commit real credentials
+.env
+.env.*
+!.env.example
+
+# Encrypted credential stores
+tokens.enc
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Uploads / runtime artefacts
+uploads/
+tmp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
