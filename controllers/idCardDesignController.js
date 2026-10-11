@@ -10,6 +10,7 @@ const {
   getDesign,
   FIELD_CHOICES,
   THEMES,
+  FONT_FAMILIES,
   DEFAULT_OFFICER_FIELDS,
   DEFAULT_DUTY_FIELDS,
   CARD_W,
@@ -83,6 +84,8 @@ function cleanElements(list) {
       width: clamp(el?.width, 4, CARD_W, 160),
       height: clamp(el?.height, 4, CARD_H, 40),
       rotation: clamp(el?.rotation, -180, 180, 0),
+      opacity: clamp(el?.opacity, 0.1, 1, 1),
+      locked: el?.locked === true,
     };
     if (type === 'image') {
       const src = String(el?.src || '');
@@ -94,6 +97,7 @@ function cleanElements(list) {
       item.color = /^#[0-9a-fA-F]{6}$/.test(String(el?.color || '')) ? String(el.color) : '#000000';
       item.fontWeight = el?.fontWeight === 'bold' ? 'bold' : 'normal';
       item.align = ['left', 'center', 'right'].includes(el?.align) ? el.align : 'left';
+      item.fontFamily = FONT_FAMILIES.includes(el?.fontFamily) ? el.fontFamily : 'sans';
     }
     out.push(item);
   }

@@ -181,6 +181,8 @@ function drawElement(doc, el) {
   doc.save();
   doc.translate(x + w / 2, y + h / 2);
   if (rot) doc.rotate(rot);
+  const opacity = Math.min(1, Math.max(0.1, Number(el.opacity) || 1));
+  if (opacity < 1 && typeof doc.opacity === 'function') doc.opacity(opacity);
   if (el.type === 'image' && el.src) {
     try {
       const m = /^data:(image\/(?:png|jpeg));base64,(.+)$/i.exec(String(el.src));
@@ -188,7 +190,15 @@ function drawElement(doc, el) {
     } catch { /* ignore a corrupt image rather than failing the whole card */ }
   } else {
     const size = Math.max(3, Number(el.fontSize) || 12);
-    const font = el.fontWeight === 'bold' ? 'Helvetica-Bold' : 'Helvetica';
+    const fam = ['sans', 'serif', 'mono'].includes(el.fontFamily) ? el.fontFamily : 'sans';
+    const bold = el.fontWeight === 'bold';
+    // Map (family, weight) -> one of PDFkit's 14 built-in fonts.
+    const FONT_MAP = {
+      sans: { normal: 'Helvetica', bold: 'Helvetica-Bold' },
+      serif: { normal: 'Times-Roman', bold: 'Times-Bold' },
+      mono: { normal: 'Courier', bold: 'Courier-Bold' },
+    };
+    const font = FONT_MAP[fam][bold ? 'bold' : 'normal'];
     doc.font(font).fontSize(size).fillColor(el.color || '#000000')
       .text(String(el.text || ''), -w / 2, -size / 2, {
         width: w, height: h, align: el.align || 'left', lineBreak: true,
@@ -448,10 +458,17 @@ async function getOrCreateCard(allocationId, { force = false } = {}) {
 /**
  * Public (token-gated) URL for a stored card, embedded in the SMS so the
  * officer can download the PDF from a phone without an admin session.
+ *
+ * Base URL resolution (first match wins) so it "just works" after deploy
+ * without hardcoding a host that changes between environments:
+ *   1. PUBLIC_BASE_URL  — explicit override (set this on Render to be safe)
+ *   2. RENDER_EXTERNAL_URL — auto-set by Render to this service's public URL
+ *   3. localhost:PORT   — local dev fallback
  */
 function publicCardUrl(card) {
   const base = (
     process.env.PUBLIC_BASE_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
     `http://localhost:${process.env.PORT || 5002}`
   ).replace(/\/+$/, '');
   return `${base}/api/idcards/pdf/${card._id}?token=${card.downloadToken}`;

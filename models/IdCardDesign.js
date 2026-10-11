@@ -25,6 +25,10 @@ const FIELD_CHOICES = [
 
 const THEMES = ['navy', 'green', 'maroon', 'teal'];
 
+// Font choices for freeform text elements (mapped to PDF fonts in the service
+// and to CSS stacks in the designer so preview == print).
+const FONT_FAMILIES = ['sans', 'serif', 'mono'];
+
 // Card canvas size in PDF points (kept in sync with idCardService).
 const CARD_W = 480;
 const CARD_H = 300;
@@ -58,6 +62,13 @@ const elementSchema = new mongoose.Schema(
     color: { type: String, default: '#000000' },
     fontWeight: { type: String, enum: ['normal', 'bold'], default: 'normal' },
     align: { type: String, enum: ['left', 'center', 'right'], default: 'left' },
+    // text font: 'sans' (clean Helvetica), 'serif' (official Times), 'mono' (Courier)
+    fontFamily: { type: String, enum: ['sans', 'serif', 'mono'], default: 'sans' },
+    // transparency 0..1 — signatures/stamps look natural < 1
+    opacity: { type: Number, default: 1, min: 0.1, max: 1 },
+    // lock position so an accidental drag can't move it (admin can still edit
+    // its other properties; drag is disabled in the designer when true).
+    locked: { type: Boolean, default: false },
     // image-only
     src: { type: String, default: '' }, // validated data-URI
   },
@@ -152,6 +163,7 @@ module.exports = {
   getDesign,
   FIELD_CHOICES,
   THEMES,
+  FONT_FAMILIES,
   DEFAULT_OFFICER_FIELDS,
   DEFAULT_DUTY_FIELDS,
   CARD_W,
