@@ -110,6 +110,9 @@ function requestLogger(req, res, next) {
 
     // Request inputs (redacted) — helpful when debugging 4xx/5xx.
     if (isWarn || isErr || process.env.LOG_REQUEST_BODIES === 'true') {
+      // Origin is the single most useful clue for a cross-origin deploy bug
+      // (e.g. Vercel frontend -> Render backend), so always surface it here.
+      if (req.headers?.origin) console.log(`       origin: ${req.headers.origin}`);
       const q = Object.keys(req.query || {}).length
         ? clip(JSON.stringify(redact(req.query)))
         : '';
