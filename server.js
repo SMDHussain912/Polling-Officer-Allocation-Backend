@@ -27,6 +27,8 @@ const expressMongoSanitize = require("express-mongo-sanitize");
 
 const { protect } = require('./middleware/authMiddleware');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
+const requestLogger = require('./middleware/requestLogger');
+const morganMiddleware = requestLogger.morganMiddleware;
 const { rateLimit } = require('./middleware/rateLimitMiddleware');
 const { buildSessionMiddleware } = require('./config/session');
 const { swaggerDocsAuth } = require('./middleware/basicAuthMiddleware');
@@ -93,6 +95,14 @@ const app = express();
 // Trust the first proxy hop (Vite dev proxy, ngrok tunnel) so the secure
 // cookie works over https and req.ip reflects the real client (rate limiter).
 app.set('trust proxy', 1);
+
+// ------------------------------ Request logging -----------------------------
+// morgan prints the standard one-line access log (method, url, status, time);
+// requestLogger adds the redacted request-body / response-body detail lines.
+// Toggle both with LOG_REQUESTS=true/false (on by default in dev, off in
+// production unless enabled). Passwords/tokens/cookies are redacted.
+app.use(morganMiddleware);
+app.use(requestLogger);
 
 // --------------------------- Global middleware ------------------------------
 // CORS allow-list: same-origin/proxied requests (no Origin header), localhost
