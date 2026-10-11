@@ -1,10 +1,8 @@
-﻿const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
+﻿const bcrypt = require('bcryptjs');
 const Admin = require('../models/Admin');
 const roleService = require('../services/roleService');
-const { sanitizeUser, ROLES } = roleService;
+const { sanitizeUser } = roleService;
 const { COOKIE_NAME } = require('../config/session');
-const { verifyFirebaseIdToken } = require('../services/googleAuthService');
 
 function normalizeLogin(value) {
   return String(value || '').trim().toLowerCase();
@@ -88,93 +86,4 @@ async function logout(req, res, next) {
   }
 }
 
-/**
- * POST /api/auth/google
- * Firebase Google sign-in for the admin. The browser completes the Google
- * popup and sends the resulting Firebase ID token. The token is verified
- * SERVER-SIDE (signature, project, issuer, expiry, verified email - see
- * googleAuthService) and the email is then matched against the
- * ADMIN_GOOGLE_EMAILS allowlist. Any other account is declined with 403 -
- * exactly one configured Google identity can ever hold an admin session.
- *
- * On success the admin document is looked up by email/username (provisioned
- * once on first Google login, with an unguessable random password so the
- * account cannot be brute-forced through /login) and the session cookie is
- * issued exactly like the password login.
- */
-async function googleLogin(req, res, next) {
-  try {
-    const allowlist = (process.env.ADMIN_GOOGLE_EMAILS || '')
-      .split(',')
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean);
-
-    // Fail closed: without a configured allowlist the endpoint admits nobody.
-    if (!allowlist.length) {
-      return res.status(403).json({
-        success: false,
-        message: 'Google sign-in is not enabled for this deployment',
-      });
-    }
-
-    const { idToken } = req.body || {};
-    const result = await verifyFirebaseIdToken(idToken, {
-      projectId: process.env.FIREBASE_PROJECT_ID,
-    });
-
-    if (!result.valid) {
-      if (result.reason === 'malformed') {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Google sign-in token is missing or malformed' });
-      }
-      // Invalid/expired/wrong-project tokens are all "unauthenticated".
-      return res.status(401).json({
-        success: false,
-        message: `Google sign-in failed: ${result.reason}`,
-      });
-    }
-
-    const email = String(result.claims.email || '').trim().toLowerCase();
-    if (!allowlist.includes(email)) {
-      // Deliberately generic - the response must not leak which emails exist.
-      return res.status(403).json({
-        success: false,
-        message: 'This Google account is not authorized for admin access',
-      });
-    }
-
-    // Find (or provision once) the admin account bound to this Google email.
-    let admin = await Admin.findOne({ $or: [{ email }, { username: email }] });
-    if (!admin) {
-      const unguessable = crypto.randomBytes(24).toString('hex');
-      admin = await Admin.create({
-        name: result.claims.name || email,
-        username: email,
-        email,
-        password: await bcrypt.hash(unguessable, 12),
-        role: ROLES.SUPER_ADMIN,
-        status: 'active',
-      });
-    } else if (admin.status === 'inactive') {
-      return res.status(403).json({
-        success: false,
-        message: 'This account has been deactivated - contact your administrator',
-      });
-    }
-
-    // Identical session issuance to the password login (anti-fixation rotate).
-    req.session.regenerate((regenErr) => {
-      if (regenErr) return next(regenErr);
-      req.session.adminId = admin._id.toString();
-      req.session.save((saveErr) => {
-        if (saveErr) return next(saveErr);
-        return res.json({ success: true, user: sanitizeUser(admin) });
-      });
-    });
-  } catch (error) {
-    next(error);
-  }
-}
-
-module.exports = { login, me, logout, googleLogin };
+module.exports = { login, me, logout };
